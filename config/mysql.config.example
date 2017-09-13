@@ -1,0 +1,5 @@
+name={mysql instance name}
+host={hostname or ip}
+port={port}
+username={username with REPLICATION CLIENT grant and above}
+password={password}                                            

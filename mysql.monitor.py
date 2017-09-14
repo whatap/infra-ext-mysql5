@@ -8,7 +8,8 @@ from StringIO import StringIO
 history_keyquerydict={
     'mysql.query.%s.usage':['INNODB_MEM_TOTAL', 'INNODB_ROW_LOCK_CURRENT_WAITS'],
     'mysql.query.%s.bytes.ps':['INNODB_DATA_READ', 'INNODB_DATA_WRITTEN', 'BYTES_SENT', 'BYTES_RECEIVED'],
-    'mysql.query.%s.counts.ps':['INNODB_ROWS_DELETED', 'INNODB_ROWS_INSERTED', 'INNODB_ROWS_UPDATED', 'INNODB_ROWS_READ', 'ROWS_SENT', 'ROWS_READ'],
+    'mysql.query.%s.counts.ps':['INNODB_ROWS_DELETED', 'INNODB_ROWS_INSERTED', 'INNODB_ROWS_UPDATED', 'INNODB_ROWS_READ', 'ROWS_SENT', 'ROWS_READ', 'SLOW_QUERIES'],
+    'mysql.slave.%s.usage':['Seconds_Behind_Master'],
 }
 
 history_sum={
@@ -35,14 +36,31 @@ def printMeta(name, key, value, buf):
     buf.write(str(value))
     buf.write('\n')
 
-def measurePerformance(name=None, host=None, port=3306, username=None, password=None ):
+def measurePerformance(name=None, host=None, port=3306, username=None, password=None, buf=None ):
     if not name:
         name = '%s:%d'%(host, port)
-    conn = pymysql.connect(host=host, port=int(port),
-                                 user=username,
-                                 password=password,
-                                 charset='utf8mb4',
-                                 cursorclass=pymysql.cursors.DictCursor)
+    conn = None
+    try:
+        conn = pymysql.connect(host=host, port=int(port),
+                               user=username,
+                               password=password,
+                               charset='utf8mb4',
+                               cursorclass=pymysql.cursors.DictCursor)
+        cursor = conn.cursor()
+        sql = 'select 1 as one'
+        cursor.execute(sql)
+        result = cursor.fetchone()
+        if 1 != result['one']:
+            raise Exception('select 1 returned %s' % (str(result)))
+        printHistory(name, 'mysql.ping', 1, buf)
+        cursor.close()
+    except Exception, e:
+        printHistory(name, 'mysql.ping', 0, buf)
+        exc_info = sys.exc_info()
+        import traceback
+        error = traceback.format_exception(*(exc_info))[-1]
+        printMeta(name, 'mysql.ping.error', error, buf)
+
     if conn:
         cursor = conn.cursor()
         databases = {}
@@ -82,11 +100,18 @@ def measurePerformance(name=None, host=None, port=3306, username=None, password=
 
             variable_dict[result['Variable_name']] = result['Value']
 
+        sql = 'show slave status'
+        cursor.execute(sql)
+        result = cursor.fetchone()
+        if result:
+            variable_dict.update(result)
+            if 'Seconds_Behind_Master' in result and result['Seconds_Behind_Master'] != None:
+                kvdict['Seconds_Behind_Master'] = result['Seconds_Behind_Master']
+
         conn.close()
         # from pprint import pprint
         # pprint(kvdict)
 
-        buf = StringIO()
         printHistory(name, 'mysql.connection.usage',  kvdict['THREADS_CONNECTED'], buf)
         printHistory(name, 'mysql.bufferpool.usage', 100.0 - float(kvdict['INNODB_BUFFER_POOL_PAGES_FREE'])*100.0/float(kvdict['INNODB_BUFFER_POOL_PAGES_TOTAL']), buf)
         if 'INNODB_MEM_TOTAL' in kvdict:
@@ -104,7 +129,7 @@ def measurePerformance(name=None, host=None, port=3306, username=None, password=
         for k, v in variable_dict.items():
             printMeta(name, 'mysql.variables.%s'%(k), v, buf)
 
-        return buf.getvalue()
+        return
 
 def listdir(prefix=os.path.split(os.path.realpath(__file__))[0]):
     buf = StringIO()
@@ -117,7 +142,7 @@ def listdir(prefix=os.path.split(os.path.realpath(__file__))[0]):
                     k, v = line.strip().split('=')
                     arg_dict[k] = v
             try:
-                buf.write(measurePerformance(**arg_dict))
+                measurePerformance(buf=buf, **arg_dict)
             except :
                 pass
     return buf.getvalue()

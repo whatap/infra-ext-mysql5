@@ -6,9 +6,10 @@ from StringIO import StringIO
 
 
 history_keyquerydict={
-    'mysql.query.%s.usage':['INNODB_MEM_TOTAL', 'INNODB_ROW_LOCK_CURRENT_WAITS'],
+    'mysql.query.%s.usage':['INNODB_MEM_TOTAL','TABLE_LOCKS_WAITED', 'INNODB_ROW_LOCK_CURRENT_WAITS'],
     'mysql.query.%s.bytes.ps':['INNODB_DATA_READ', 'INNODB_DATA_WRITTEN', 'BYTES_SENT', 'BYTES_RECEIVED'],
-    'mysql.query.%s.counts.ps':['INNODB_ROWS_DELETED', 'INNODB_ROWS_INSERTED', 'INNODB_ROWS_UPDATED', 'INNODB_ROWS_READ', 'ROWS_SENT', 'ROWS_READ', 'SLOW_QUERIES'],
+    'mysql.query.%s.counts.ps':['INNODB_ROWS_DELETED', 'INNODB_ROWS_INSERTED', 'INNODB_ROWS_UPDATED',
+                                'INNODB_ROWS_READ', 'ROWS_SENT', 'ROWS_READ', 'SLOW_QUERIES'],
     'mysql.slave.%s.usage':['Seconds_Behind_Master'],
 }
 
@@ -33,7 +34,7 @@ def printMeta(name, key, value, buf):
     buf.write(' ')
     buf.write(key)
     buf.write(' ')
-    buf.write(str(value))
+    buf.write(str(value).strip())
     buf.write('\n')
 
 def measurePerformance(name=None, host=None, port=3306, username=None, password=None, buf=None ):
@@ -100,13 +101,19 @@ def measurePerformance(name=None, host=None, port=3306, username=None, password=
 
             variable_dict[result['Variable_name']] = result['Value']
 
-        sql = 'show slave status'
-        cursor.execute(sql)
-        result = cursor.fetchone()
-        if result:
-            variable_dict.update(result)
-            if 'Seconds_Behind_Master' in result and result['Seconds_Behind_Master'] != None:
-                kvdict['Seconds_Behind_Master'] = result['Seconds_Behind_Master']
+        try:
+            sql = 'show slave status'
+            cursor.execute(sql)
+            result = cursor.fetchone()
+            if result:
+                variable_dict.update(result)
+                if 'Seconds_Behind_Master' in result and result['Seconds_Behind_Master'] != None:
+                    kvdict['Seconds_Behind_Master'] = result['Seconds_Behind_Master']
+        except pymysql.err.InternalError, e:
+            exc_info = sys.exc_info()
+            import traceback
+            error = traceback.format_exception(*(exc_info))[-1]
+            printMeta(name, 'mysql.slave.error', error, buf)
 
         conn.close()
         # from pprint import pprint

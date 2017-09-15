@@ -67,15 +67,18 @@ def measurePerformance(name=None, host=None, port=3306, username=None, password=
         databases = {}
         kvdict={}
         variable_dict={}
-        sql = 'select VARIABLE_NAME, VARIABLE_VALUE from information_schema.GLOBAL_STATUS '
+        sql = 'show global status'
         cursor.execute(sql)
+
         while True:
             result = cursor.fetchone()
             if not result:
                 break
-            key =result['VARIABLE_NAME']
-            value = result['VARIABLE_VALUE']
+
+            key =result['Variable_name'].upper()
+            value = result['Value']
             kvdict[key] = value
+
         sql = 'show databases'
         cursor.execute(sql)
         while True:
@@ -209,12 +212,12 @@ def daemonize(uid = os.getuid(), log_prefix = None):
 
 def remotemeasure(host='127.0.0.1', port=54000):
     try:
-        r = requests.get('http://%s:%d'%(host, port), timeout=3)
+        r = requests.get('http://%s:%d'%(host, port), timeout=300)
         sys.stdout.write(r.text)
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
         daemonize()
         time.sleep(3)
-        r = requests.get('http://%s:%d' % (host, port), timeout=3)
+        r = requests.get('http://%s:%d' % (host, port), timeout=300)
         sys.stdout.write(r.text)
 
 
